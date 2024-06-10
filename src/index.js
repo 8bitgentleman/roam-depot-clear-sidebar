@@ -1,43 +1,40 @@
 import { render as renderSimpleAlert } from "roamjs-components/components/SimpleAlert";
 
 async function removeWindow(w) {
-  window.roamAlphaAPI.ui.rightSidebar.removeWindow(
-    {
-      "window":
-      {
-        "type": w['type'],
-        "block-uid": w['block-uid'] || w['page-uid'] || w['mentions-uid']
-      }
-    }
-  )
+  let windowConfig = {
+    "type": w['type']
+  };
+
+  if (w['type'] === 'search-query') {
+    windowConfig['search-query-str'] = w['search-query-str'];
+  } else {
+    windowConfig['block-uid'] = w['block-uid'] || w['page-uid'] || w['mentions-uid'];
+  }
+
+  await window.roamAlphaAPI.ui.rightSidebar.removeWindow({ "window": windowConfig });
 }
 
 async function toggleWindowCollapse() {
   let windows = window.roamAlphaAPI.ui.rightSidebar.getWindows();
   const allCollapsed = windows.every(item => item["collapsed?"] === true);
+  
   windows.forEach(w => {
-    if (allCollapsed) {
-      window.roamAlphaAPI.ui.rightSidebar.expandWindow(
-        {
-            "window":
-            {
-              "type": w['type'],
-              "block-uid": w['block-uid'] || w['page-uid'] || w['mentions-uid']
-            }
-          }
-    )
-    } else{
-      window.roamAlphaAPI.ui.rightSidebar.collapseWindow(
-          {
-              "window":
-              {
-                "type": w['type'],
-                "block-uid": w['block-uid'] || w['page-uid'] || w['mentions-uid']
-              }
-            }
-      )
+    let windowConfig = {
+      "type": w['type']
+    };
+
+    if (w['type'] === 'search-query') {
+      windowConfig['search-query-str'] = w['search-query-str'];
+    } else {
+      windowConfig['block-uid'] = w['block-uid'] || w['page-uid'] || w['mentions-uid'];
     }
-  })
+
+    if (allCollapsed) {
+      window.roamAlphaAPI.ui.rightSidebar.expandWindow({ "window": windowConfig });
+    } else {
+      window.roamAlphaAPI.ui.rightSidebar.collapseWindow({ "window": windowConfig });
+    }
+  });
 }
 
 async function loopWindows(extensionAPI) {
