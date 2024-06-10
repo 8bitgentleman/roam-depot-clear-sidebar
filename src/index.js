@@ -41,7 +41,9 @@ async function toggleWindowCollapse() {
 }
 
 async function loopWindows(extensionAPI) {
-  let sidebar = window.roamAlphaAPI.ui.rightSidebar.getWindows();
+  let sidebar = window.roamAlphaAPI.ui.rightSidebar.getWindows()
+                  // only remove unpinned sidebar windows
+                  .filter(w => !(w["pinned?"] || w["pinned-to-top?"]));
   if (extensionAPI.settings.get('sidebar-confirm')) {
     renderSimpleAlert({
       content:
@@ -51,6 +53,7 @@ async function loopWindows(extensionAPI) {
           // console.log(sidebar[i])
           removeWindow(sidebar[i])
         }
+        window.roamAlphaAPI.ui.rightSidebar.close();
       },
       onCancel: () => {
         // do nothing
@@ -60,6 +63,7 @@ async function loopWindows(extensionAPI) {
     for (let i = 0; i < sidebar.length; i++) {
       removeWindow(sidebar[i])
     }
+    window.roamAlphaAPI.ui.rightSidebar.close();
   }
 }
 
