@@ -188,11 +188,19 @@ async function onload({ extensionAPI }) {
   };
 
   extensionAPI.settings.panel.create(panelConfig);
-  
+
   extensionAPI.ui.commandPalette.addCommand({
-    label: 'Clear Sidebar', 
+    label: 'Clear Sidebar',
     callback: () => {
       loopWindows(extensionAPI);
+    },
+    "disable-hotkey": false,
+  })
+
+  extensionAPI.ui.commandPalette.addCommand({
+    label: 'Clear Sidebar: Toggle Collapse All',
+    callback: () => {
+      toggleWindowCollapse();
     },
     "disable-hotkey": false,
   })
