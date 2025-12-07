@@ -11,7 +11,12 @@ async function removeWindow(w) {
     windowConfig['block-uid'] = w['block-uid'] || w['page-uid'] || w['mentions-uid'];
   }
 
-  await window.roamAlphaAPI.ui.rightSidebar.removeWindow({ "window": windowConfig });
+  try {
+    await window.roamAlphaAPI.ui.rightSidebar.removeWindow({ "window": windowConfig });
+  } catch (error) {
+    console.error('Failed to remove sidebar window:', error);
+    throw error; // Re-throw to stop batch operation
+  }
 }
 
 async function toggleWindowCollapse() {
@@ -41,87 +46,97 @@ async function loopWindows(extensionAPI) {
   let sidebar = window.roamAlphaAPI.ui.rightSidebar.getWindows()
                   // only remove unpinned sidebar windows
                   .filter(w => !(w["pinned?"] || w["pinned-to-top?"]));
+
   if (extensionAPI.settings.get('sidebar-confirm')) {
     renderSimpleAlert({
       content:
         `Do you want to clear ${sidebar.length} blocks from the sidebar?`,
-      onConfirm: () => {
-        for (let i = 0; i < sidebar.length; i++) {
-          // console.log(sidebar[i])
-          removeWindow(sidebar[i])
+      onConfirm: async () => {
+        try {
+          for (let i = 0; i < sidebar.length; i++) {
+            await removeWindow(sidebar[i]);
+          }
+          window.roamAlphaAPI.ui.rightSidebar.close();
+        } catch (error) {
+          renderSimpleAlert({
+            content: `Failed to clear sidebar: ${error.message}`,
+            onConfirm: () => {}
+          });
         }
-        window.roamAlphaAPI.ui.rightSidebar.close();
       },
       onCancel: () => {
         // do nothing
       },
     });
   } else {
-    for (let i = 0; i < sidebar.length; i++) {
-      removeWindow(sidebar[i])
+    try {
+      for (let i = 0; i < sidebar.length; i++) {
+        await removeWindow(sidebar[i]);
+      }
+      window.roamAlphaAPI.ui.rightSidebar.close();
+    } catch (error) {
+      renderSimpleAlert({
+        content: `Failed to clear sidebar: ${error.message}`,
+        onConfirm: () => {}
+      });
     }
-    window.roamAlphaAPI.ui.rightSidebar.close();
   }
 }
 
-const createIconButton = (icon, className) => {
-  const popoverButton = document.createElement("button");
-  popoverButton.className = `bp3-button bp3-minimal bp3-small ${className}`;
-  popoverButton.tabIndex = 0;
-  popoverButton.style = "right: 85px;";
-  const popoverIcon = document.createElement("span");
-  popoverIcon.className = `bp3-icon bp3-icon-${icon}`;
+// Generic button creator with error handling
+function createSidebarButton(iconName, className, onClick, nameToUse) {
+  const checkForButton = document.getElementById(`${nameToUse}-flex-space`);
+  if (checkForButton) {
+    return; // Button already exists
+  }
 
-  popoverButton.appendChild(popoverIcon);
+  const roamSidebarButton = document.body.querySelector("#right-sidebar>.flex-h-box>button");
+  if (!roamSidebarButton) {
+    console.error('[Clear Sidebar] Cannot find sidebar button mount point');
+    return;
+  }
 
-  return popoverButton;
-};
+  // Create button
+  const mainButton = document.createElement("button");
+  mainButton.className = `bp3-button bp3-minimal bp3-small ${className}`;
+  mainButton.tabIndex = 0;
+  mainButton.style = "right: 85px;";
+
+  const iconSpan = document.createElement("span");
+  iconSpan.className = `bp3-icon bp3-icon-${iconName}`;
+  mainButton.appendChild(iconSpan);
+
+  // Create flex spacer
+  const flexDiv = document.createElement("div");
+  flexDiv.className = className;
+  flexDiv.id = `${nameToUse}-flex-space`;
+
+  // Insert into DOM
+  roamSidebarButton.insertAdjacentElement("beforeBegin", mainButton);
+  roamSidebarButton.insertAdjacentElement("beforeBegin", flexDiv);
+
+  // Attach event listener
+  mainButton.addEventListener("click", onClick);
+}
 
 function createButton(extensionAPI) {
-
-
-  var iconName = 'delete'
-  var nameToUse = 'clearSidebar';
-
-  var checkForButton = document.getElementById(`${nameToUse}-flex-space`);
-  if (!checkForButton) {
-    var mainButton = createIconButton(iconName, 'clear-sidebar');
-    var roamSidebarButton = document.body.querySelector("#right-sidebar>.flex-h-box>button");
-
-    var flexDiv = document.createElement("div");
-    flexDiv.className = "clear-sidebar";
-    flexDiv.id = nameToUse + "-flex-space";
-
-    roamSidebarButton.insertAdjacentElement("beforeBegin", mainButton);
-    roamSidebarButton.insertAdjacentElement("beforeBegin", flexDiv);
-
-    mainButton.addEventListener("click", function () { loopWindows(extensionAPI) });
-
-  }
-
+  createSidebarButton(
+    'delete',
+    'clear-sidebar',
+    () => loopWindows(extensionAPI),
+    'clearSidebar'
+  );
 }
 
-function createCollapseButton(){
-  var iconName = 'collapse-all'
-  var nameToUse = 'collapseAll';
-
-  var checkForButton = document.getElementById(`${nameToUse}-flex-space`);
-  if (!checkForButton) {
-    var mainButton = createIconButton(iconName, 'collapse-all');
-    var roamSidebarButton = document.body.querySelector("#right-sidebar>.flex-h-box>button");
-
-    var flexDiv = document.createElement("div");
-    flexDiv.className = "collapse-all";
-    flexDiv.id = nameToUse + "-flex-space";
-
-    roamSidebarButton.insertAdjacentElement("beforeBegin", mainButton);
-    roamSidebarButton.insertAdjacentElement("beforeBegin", flexDiv);
-    mainButton.addEventListener("click", function () { toggleWindowCollapse() });
-
-  }
+function createCollapseButton() {
+  createSidebarButton(
+    'collapse-all',
+    'collapse-all',
+    toggleWindowCollapse,
+    'collapseAll'
+  );
 }
 
-// bp3-icon-collapse-all
 function destroyButton(name) {
   // remove all parts of the button
   const toggles = document.querySelectorAll(name);
