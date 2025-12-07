@@ -1,5 +1,20 @@
 import { render as renderSimpleAlert } from "roamjs-components/components/SimpleAlert";
 
+// State for undo functionality
+let lastClearedWindows = null;
+
+// Create a toaster instance for undo notifications
+let toaster = null;
+function getToaster() {
+  if (!toaster && window.Blueprint?.Core?.Toaster) {
+    toaster = window.Blueprint.Core.Toaster.create({
+      position: window.Blueprint.Core.Position.TOP,
+      maxToasts: 3,
+    });
+  }
+  return toaster;
+}
+
 async function removeWindow(w) {
   let windowConfig = {
     "type": w['type']
@@ -42,6 +57,90 @@ async function toggleWindowCollapse() {
   });
 }
 
+async function clearSidebar(sidebar) {
+  try {
+    const count = sidebar.length;
+    for (let i = 0; i < sidebar.length; i++) {
+      await removeWindow(sidebar[i]);
+    }
+    window.roamAlphaAPI.ui.rightSidebar.close();
+
+    // Show toast with undo button
+    const toast = getToaster();
+    if (toast) {
+      toast.show({
+        message: `Cleared ${count} window${count === 1 ? '' : 's'} from sidebar`,
+        intent: window.Blueprint.Core.Intent.SUCCESS,
+        icon: "tick",
+        timeout: 5000,
+        action: {
+          onClick: () => {
+            undoClear();
+          },
+          text: "Undo",
+        },
+      });
+    }
+
+    return true;
+  } catch (error) {
+    renderSimpleAlert({
+      content: `Failed to clear sidebar: ${error.message}`,
+      onConfirm: () => {}
+    });
+    return false;
+  }
+}
+
+async function undoClear() {
+  if (!lastClearedWindows || lastClearedWindows.length === 0) {
+    renderSimpleAlert({
+      content: 'Nothing to undo - no sidebar windows were recently cleared',
+      onConfirm: () => {}
+    });
+    return;
+  }
+
+  try {
+    const count = lastClearedWindows.length;
+
+    // Restore each window
+    for (const w of lastClearedWindows) {
+      let windowConfig = {
+        "type": w['type']
+      };
+
+      if (w['type'] === 'search-query') {
+        windowConfig['search-query-str'] = w['search-query-str'];
+      } else {
+        windowConfig['block-uid'] = w['block-uid'] || w['page-uid'] || w['mentions-uid'];
+      }
+
+      await window.roamAlphaAPI.ui.rightSidebar.addWindow({ "window": windowConfig });
+    }
+
+    // Show success toast
+    const toast = getToaster();
+    if (toast) {
+      toast.show({
+        message: `Restored ${count} window${count === 1 ? '' : 's'} to sidebar`,
+        intent: window.Blueprint.Core.Intent.SUCCESS,
+        icon: "undo",
+        timeout: 3000,
+      });
+    }
+
+    // Clear undo history after successful restore
+    lastClearedWindows = null;
+  } catch (error) {
+    console.error('Failed to restore sidebar windows:', error);
+    renderSimpleAlert({
+      content: `Failed to restore sidebar: ${error.message}`,
+      onConfirm: () => {}
+    });
+  }
+}
+
 async function loopWindows(extensionAPI) {
   let sidebar = window.roamAlphaAPI.ui.rightSidebar.getWindows()
                   // only remove unpinned sidebar windows
@@ -52,34 +151,18 @@ async function loopWindows(extensionAPI) {
       content:
         `Do you want to clear ${sidebar.length} blocks from the sidebar?`,
       onConfirm: async () => {
-        try {
-          for (let i = 0; i < sidebar.length; i++) {
-            await removeWindow(sidebar[i]);
-          }
-          window.roamAlphaAPI.ui.rightSidebar.close();
-        } catch (error) {
-          renderSimpleAlert({
-            content: `Failed to clear sidebar: ${error.message}`,
-            onConfirm: () => {}
-          });
-        }
+        // Save for undo before clearing
+        lastClearedWindows = sidebar;
+        await clearSidebar(sidebar);
       },
       onCancel: () => {
         // do nothing
       },
     });
   } else {
-    try {
-      for (let i = 0; i < sidebar.length; i++) {
-        await removeWindow(sidebar[i]);
-      }
-      window.roamAlphaAPI.ui.rightSidebar.close();
-    } catch (error) {
-      renderSimpleAlert({
-        content: `Failed to clear sidebar: ${error.message}`,
-        onConfirm: () => {}
-      });
-    }
+    // Save for undo before clearing
+    lastClearedWindows = sidebar;
+    await clearSidebar(sidebar);
   }
 }
 
@@ -212,6 +295,8 @@ async function onload({ extensionAPI }) {
 function onunload() {
   destroyButton('.clear-sidebar')
   destroyButton('.collapse-all')
+  // Clear undo state
+  lastClearedWindows = null;
   console.log("unload clear sidebar plugin");
 }
 
